@@ -1,0 +1,141 @@
+package com.riftlight.mmhelper.mixin;
+
+import com.riftlight.mmhelper.*;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.ingame.HandledScreen;
+import net.minecraft.client.input.KeyInput;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.LoreComponent;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.text.Text;
+
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Mixin(HandledScreen.class)
+public class HandledScreenMixin {
+	// Museum slot background changer
+	@Inject(method = "drawSlot", at = @At("HEAD"))
+	private void onDrawSlot(DrawContext context, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
+		HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+		MinecraftClient client = MinecraftClient.getInstance();
+
+		if (!screen.getTitle().getString().contains("Museum")) return;
+		if (!(slot.inventory instanceof PlayerInventory)) return;
+
+		ItemStack stack = slot.getStack();
+		if (stack.isEmpty()) return;
+		if (!hasMuseumableLore(stack)) return;
+
+		if (MuseumStorage.contains(stack)) return;
+
+		// draw background rectangle
+		// Get the actual screen position - slots use relative coordinates
+		int slotX = slot.x;
+		int slotY = slot.y;
+
+		context.fill(slotX, slotY, slotX + 16, slotY + 16, 0x60d81d1d);
+	}
+
+	@Unique
+	private boolean hasMuseumableLore(ItemStack stack) {
+		LoreComponent lore = stack.get(DataComponentTypes.LORE);
+		if (lore == null) return false;
+		Text line = lore.lines().get(lore.lines().size()-2);
+		return line.getString().contains("Museumable");
+	}
+
+	// To-Do list keypress updates
+	@Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
+	public void onKeyPressed(KeyInput key, CallbackInfoReturnable<Boolean> cir) {
+		if (key.getKeycode() == KeyBindingHelper.getBoundKeyOf(MMHelper.pinItemKey).getCode()) {
+			HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+			MinecraftClient client = MinecraftClient.getInstance();
+
+			double mouseX = client.mouse.getX() * client.getWindow().getScaledWidth() / (double)client.getWindow().getWidth();
+			double mouseY = client.mouse.getY() * client.getWindow().getScaledHeight() / (double)client.getWindow().getHeight();
+
+			Slot hoveredSlot = ((HandledScreenAccessor) screen).invokeGetSlotAt(mouseX, mouseY);
+			if (hoveredSlot != null && hoveredSlot.hasStack()) {
+				ItemStack stack = hoveredSlot.getStack();
+				client.player.sendMessage(Text.literal("Hovered item: " + stack.getItem().toString()), false);
+
+				TaskHudOverlay.setItem(stack);
+				cir.setReturnValue(true); // Mark as handled
+			}
+		}
+		else if (key.getKeycode() == KeyBindingHelper.getBoundKeyOf(MMHelper.recordCraftKey).getCode()) {
+			HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+			MinecraftClient client = MinecraftClient.getInstance();
+
+			if (client.currentScreen != null && !client.currentScreen.getTitle().getString().startsWith("Viewing Recipe #"))
+				return;
+
+			Recipe recipe = captureRecipe(screen);
+
+			Slot keySlot = getSlotAt(screen, 7, 3);
+			if (keySlot != null && keySlot.hasStack()) {
+				String keyItem = keySlot.getStack().getName().getString();
+
+				RecipeStorage.saveRecipe(keyItem, recipe);
+				client.player.sendMessage(Text.literal("Saved recipe for " + keyItem), false);
+				cir.setReturnValue(true); // Mark as handled
+			}
+		}
+	}
+
+	private Slot getSlotAt(HandledScreen<?> screen, int gridX, int gridY) {
+		// Convert (1,1) top-left into zero-based
+		int x = gridX - 1;
+		int y = gridY - 1;
+
+		// Assuming row-major left-to-right, top-to-bottom
+		int index = y * 9 + x; // 9 is the width of the menu
+		if (index >= 0 && index < screen.getScreenHandler().slots.size()) {
+			return screen.getScreenHandler().slots.get(index);
+		}
+		return null;
+	}
+
+	private Recipe captureRecipe(HandledScreen<?> screen) {
+		List<Ingredient> ingredients = new ArrayList<>();
+		Map<String, Integer> totals = new HashMap<>();
+		ItemStack[][] grid = new ItemStack[3][3];
+
+		for (int y = 0; y < 3; y++) {
+			for (int x = 0; x < 3; x++) {
+				Slot slot = getSlotAt(screen, x + 3, y + 2);
+				if (slot != null) {
+					ItemStack item = slot.getStack().copy();
+					String name = item.getName().getString();
+					boolean isNothing = item.getItem().getTranslationKey().equals("block.minecraft.light_gray_stained_glass_pane");
+					grid[y][x] = isNothing ? null : item;
+					if (!name.isEmpty() && !isNothing)
+						totals.put(name, totals.getOrDefault(name, 0) + 1);
+				} else {
+					grid[y][x] = null;
+				}
+			}
+		}
+
+		for (Map.Entry<String, Integer> e : totals.entrySet()) {
+			ingredients.add(new Ingredient(e.getKey(), e.getValue()));
+		}
+
+		return new Recipe(ingredients, grid);
+	}
+}

@@ -1,0 +1,33 @@
+{
+	"schemaVersion": 1,
+	"id": "mmhelper",
+	"version": "${version}",
+	"name": "Mining Masters Helper",
+	"description": "This is an example description! Tell everyone what your mod is about!",
+	"authors": [
+		"Riftlight"
+	],
+	"contact": {
+	},
+	"license": "CC0-1.0",
+	"icon": "assets/mmhelper/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.riftlight.mmhelper.MMHelper",
+			"com.riftlight.mmhelper.TaskHudOverlay"
+		]
+	},
+	"mixins": [
+		"mmhelper.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.18.2",
+		"minecraft": "~1.21.11",
+		"java": ">=21",
+		"fabric-api": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}

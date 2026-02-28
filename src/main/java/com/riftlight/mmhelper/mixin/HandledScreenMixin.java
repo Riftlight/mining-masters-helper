@@ -14,7 +14,6 @@ import net.minecraft.screen.slot.Slot;
 import net.minecraft.text.Text;
 
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -28,6 +27,10 @@ import java.util.Map;
 
 @Mixin(HandledScreen.class)
 public class HandledScreenMixin {
+	// Only auto-record once per screen instance
+	@Unique
+	private boolean recorded = false;
+
 	// Museum slot background changer
 	@Inject(method = "drawSlot", at = @At("HEAD"))
 	private void onDrawSlot(DrawContext context, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
@@ -59,7 +62,33 @@ public class HandledScreenMixin {
 		return line.getString().contains("Museumable");
 	}
 
-	// To-Do list keypress updates
+	// Attempt to auto-record on every render until successful. Methods like onInit do not yet have slots, and capturing the packet or using drawSlot like above would be annoyingly fractured
+	@Inject(method = "render", at = @At("HEAD"))
+	private void onRender(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+		if (recorded) return;
+
+		HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
+		if (!screen.getTitle().getString().startsWith("Viewing Recipe #")) return;
+
+		if (tryRecordRecipe(screen))
+			recorded = true;
+	}
+
+	@Unique
+	private boolean tryRecordRecipe(HandledScreen<?> screen) {
+		Recipe recipe = captureRecipe(screen);
+		Slot keySlot = getSlotAt(screen, 7, 3);
+		if (keySlot != null && keySlot.hasStack()) {
+			String keyItem = keySlot.getStack().getName().getString();
+			RecipeStorage.saveRecipe(keyItem, recipe);
+
+			System.out.println("Auto-saved recipe for " + keyItem);
+			return true;
+		}
+		return false; // slots not ready yet, retry next frame
+	}
+
+	// When the user hovers a recipe and pins it
 	@Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
 	public void onKeyPressed(KeyInput key, CallbackInfoReturnable<Boolean> cir) {
 		if (key.getKeycode() == KeyBindingHelper.getBoundKeyOf(MMHelper.pinItemKey).getCode()) {
@@ -72,27 +101,8 @@ public class HandledScreenMixin {
 			Slot hoveredSlot = ((HandledScreenAccessor) screen).invokeGetSlotAt(mouseX, mouseY);
 			if (hoveredSlot != null && hoveredSlot.hasStack()) {
 				ItemStack stack = hoveredSlot.getStack();
-				client.player.sendMessage(Text.literal("Hovered item: " + stack.getItem().toString()), false);
 
 				TaskHudOverlay.setItem(stack);
-				cir.setReturnValue(true); // Mark as handled
-			}
-		}
-		else if (key.getKeycode() == KeyBindingHelper.getBoundKeyOf(MMHelper.recordCraftKey).getCode()) {
-			HandledScreen<?> screen = (HandledScreen<?>) (Object) this;
-			MinecraftClient client = MinecraftClient.getInstance();
-
-			if (client.currentScreen != null && !client.currentScreen.getTitle().getString().startsWith("Viewing Recipe #"))
-				return;
-
-			Recipe recipe = captureRecipe(screen);
-
-			Slot keySlot = getSlotAt(screen, 7, 3);
-			if (keySlot != null && keySlot.hasStack()) {
-				String keyItem = keySlot.getStack().getName().getString();
-
-				RecipeStorage.saveRecipe(keyItem, recipe);
-				client.player.sendMessage(Text.literal("Saved recipe for " + keyItem), false);
 				cir.setReturnValue(true); // Mark as handled
 			}
 		}

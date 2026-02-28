@@ -15,7 +15,6 @@ public class MMHelper implements ModInitializer {
 	public static final String MOD_ID = "mmhelper";
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 	public static KeyBinding pinItemKey;
-	public static KeyBinding recordCraftKey;
 
 	@Override
 	public void onInitialize() {
@@ -24,12 +23,6 @@ public class MMHelper implements ModInitializer {
 				"key.mmhelper.pin",
 				InputUtil.Type.KEYSYM,
 				GLFW.GLFW_KEY_I,
-				cat
-		));
-		recordCraftKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-				"key.mmhelper.record_craft",
-				InputUtil.Type.KEYSYM,
-				GLFW.GLFW_KEY_APOSTROPHE,
 				cat
 		));
 

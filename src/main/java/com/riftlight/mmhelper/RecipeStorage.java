@@ -7,6 +7,7 @@ import net.minecraft.item.ItemStack;
 
 import java.io.*;
 import java.lang.reflect.Type;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -38,7 +39,11 @@ public class RecipeStorage {
 
 	public static void saveRecipe(String keyItem, Recipe recipe) {
 		RECIPES.put(keyItem, recipe);
-		save();
+		save(); // todo i think this is fairly expensive, don't do it in a release
+	}
+
+	public static Recipe getRecipe(String keyItem) {
+		return RECIPES.get(keyItem);
 	}
 
 	private static void save() {
@@ -52,7 +57,7 @@ public class RecipeStorage {
 		}
 	}
 
-	public static Recipe getRecipe(String keyItem) {
-		return RECIPES.get(keyItem);
+	public static Map<String, Recipe> getAllRecipes() {
+		return Collections.unmodifiableMap(RECIPES);
 	}
 }

@@ -12,7 +12,13 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class MuseumStorage {
-	private static Map<String, Boolean> museum; // Set of Strings of the names of the items in the museum
+	private enum MuseumState {
+		SUBMITTED,
+		ENHANCED,
+		ASCENDED
+	}
+
+	private static Map<String, MuseumState> museum; // Map of Strings of the names of museumed items : being submitted / enhanced / ascended
 	private static final File FILE = new File("config/mmhelper_museum.json");
 	private static final Gson GSON = new Gson();
 
@@ -22,10 +28,10 @@ public class MuseumStorage {
 
 	public static void load() {
 		try (Reader reader = new FileReader(FILE)) {
-			museum = GSON.fromJson(reader, new TypeToken<Map<String, Boolean>>(){}.getType());
+			museum = GSON.fromJson(reader, new TypeToken<Map<String, MuseumState>>(){}.getType());
 		} catch (Exception e) {
 			e.printStackTrace();
-			museum = new HashMap<String, Boolean>();
+			museum = new HashMap<>();
 		}
 	}
 
@@ -44,32 +50,55 @@ public class MuseumStorage {
 		museum.clear();
 	}
 
+	// todo use flint to check tags and make this not rely on lore
+
 	// Should only be receiving items from the collection section of the menu
 	// todo make it auto record items put in museum, changes ^
 	public static void add(ItemStack element) {
-		boolean enh = isEnhancedMuseumEntry(element);
+		MuseumState type = entryType(element);
 		String name = element.getName().getString();
-		museum.put(name, enh);
+		museum.put(name, type);
 	}
 
 	// Should only be checking for in-game inv items
 	public static boolean contains(ItemStack element) {
-		boolean enh = isEnhancedItem(element);
+		MuseumState elementType = itemType(element);
 		String name = element.getName().getString();
-		return museum.containsKey(name) && (museum.get(name) || museum.get(name) == enh); // if it's stored as enhanced (true), it's also stored as regular (false)
+
+		if (!museum.containsKey(name))
+			return false;
+
+		MuseumState storedState = museum.get(name);
+
+		return switch (storedState) {
+			case ASCENDED -> true;
+			case ENHANCED -> elementType != MuseumState.ASCENDED;
+			case SUBMITTED -> elementType == MuseumState.SUBMITTED;
+		};
 	}
 
-	private static boolean isEnhancedMuseumEntry(ItemStack stack) {
+	private static MuseumState entryType(ItemStack stack) {
 		LoreComponent lore = stack.get(DataComponentTypes.LORE);
-		if (lore == null) return false;
+		if (lore == null) return MuseumState.SUBMITTED; // never should happen
+
 		Text line = lore.lines().getLast();
-		return (line.getString().equals("☑ Enhanced!"));
+		if (line.getString().equals("☑ Enhanced!"))
+			return MuseumState.ENHANCED;
+		if (line.getString().equals("Ω Ascended!"))
+			return MuseumState.ASCENDED;
+		return MuseumState.SUBMITTED;
 	}
 
-	private static boolean isEnhancedItem(ItemStack stack) {
+	private static MuseumState itemType(ItemStack stack) {
 		LoreComponent lore = stack.get(DataComponentTypes.LORE);
-		if (lore == null) return false;
-		Text line = lore.lines().getLast();
-		return line.getString().matches("^. [A-Za-z]+ . Material");
+		if (lore == null) return MuseumState.SUBMITTED; // never should happen
+
+		String line = lore.lines().getLast().getString();
+		// this logic could be simplified but it's easier to edit in case it's changed in the future
+		if (line.matches("^(?:⚓ )?. [A-Za-z]+ . Material"))
+			return MuseumState.ENHANCED;
+		if (line.matches("^(?:⚓ )?Ω . [A-Za-z]+ . Material"))
+			return MuseumState.ASCENDED;
+		return MuseumState.SUBMITTED;
 	}
 }

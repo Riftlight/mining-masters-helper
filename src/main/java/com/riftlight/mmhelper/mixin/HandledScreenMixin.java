@@ -10,6 +10,7 @@ import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.LoreComponent;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.screen.slot.Slot;
 import net.minecraft.text.Text;
 
@@ -47,7 +48,6 @@ public class HandledScreenMixin {
 		if (MuseumStorage.contains(stack)) return;
 
 		// draw background rectangle
-		// Get the actual screen position - slots use relative coordinates
 		int slotX = slot.x;
 		int slotY = slot.y;
 
@@ -76,13 +76,26 @@ public class HandledScreenMixin {
 
 	@Unique
 	private boolean tryRecordRecipe(HandledScreen<?> screen) {
+		Slot resultSlot = getSlotAt(screen, 7, 3);
+		if (resultSlot == null)
+			return false;
 		Recipe recipe = captureRecipe(screen);
-		Slot keySlot = getSlotAt(screen, 7, 3);
-		if (keySlot != null && keySlot.hasStack()) {
-			String keyItem = keySlot.getStack().getName().getString();
-			RecipeStorage.saveRecipe(keyItem, recipe);
 
-			System.out.println("Auto-saved recipe for " + keyItem);
+		boolean recipeEmpty = true;
+		outer: for (ItemStack[] row : recipe.getGrid())
+			for (ItemStack i : row)
+				if (i != null) {
+					recipeEmpty = false;
+					break outer;
+				}
+
+		if (!recipeEmpty && resultSlot != null && resultSlot.hasStack()) {
+			ItemStack resultItem = resultSlot.getStack();
+			String resultName = resultItem.getName().getString();
+
+			RecipeStorage.saveRecipe(resultName, recipe);
+
+			System.out.println("Auto-saved recipe for " + resultName);
 			return true;
 		}
 		return false; // slots not ready yet, retry next frame
@@ -126,13 +139,15 @@ public class HandledScreenMixin {
 		Map<String, Integer> totals = new HashMap<>();
 		ItemStack[][] grid = new ItemStack[3][3];
 
+		ItemStack result = getSlotAt(screen, 7, 3).getStack();
+
 		for (int y = 0; y < 3; y++) {
 			for (int x = 0; x < 3; x++) {
 				Slot slot = getSlotAt(screen, x + 3, y + 2);
 				if (slot != null) {
 					ItemStack item = slot.getStack().copy();
 					String name = item.getName().getString();
-					boolean isNothing = item.getItem().getTranslationKey().equals("block.minecraft.light_gray_stained_glass_pane");
+					boolean isNothing = item.isOf(Items.LIGHT_GRAY_STAINED_GLASS_PANE);
 					grid[y][x] = isNothing ? null : item;
 					if (!name.isEmpty() && !isNothing)
 						totals.put(name, totals.getOrDefault(name, 0) + 1);
@@ -146,6 +161,6 @@ public class HandledScreenMixin {
 			ingredients.add(new Ingredient(e.getKey(), e.getValue()));
 		}
 
-		return new Recipe(ingredients, grid);
+		return new Recipe(result, ingredients, grid);
 	}
 }

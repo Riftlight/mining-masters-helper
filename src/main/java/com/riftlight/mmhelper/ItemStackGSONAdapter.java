@@ -3,41 +3,46 @@ package com.riftlight.mmhelper;
 import com.google.gson.*;
 
 import com.mojang.serialization.JsonOps;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.ProfileComponent;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.text.*;
-import net.minecraft.util.Identifier;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
+import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.chat.contents.PlainTextContents;
+import net.minecraft.world.item.component.ResolvableProfile;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.*;
+import net.minecraft.resources.Identifier;
 
 import java.lang.reflect.Type;
 import java.util.List;
 
 public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDeserializer<ItemStack> {
 
-	private Text findLeaf(Text text) {
-		List<Text> siblings = text.getSiblings();
+	private Component findLeaf(Component text) {
+		List<Component> siblings = text.getSiblings();
 
 		// Using the literal string because getString() on the basic object concatenates children
-		String direct = text.getContent() instanceof PlainTextContent.Literal lit ? lit.string() : null;
+		String direct = text.getContents() instanceof PlainTextContents.LiteralContents lit ? lit.text() : null;
 
 		if (direct != null && !direct.isEmpty() && siblings.isEmpty()) {
 			return text;
 		}
 
 		// Filter out empty/styling-only siblings and recurse into real ones
-		List<Text> meaningful = siblings.stream()
+		List<Component> meaningful = siblings.stream()
 				.filter(s -> !s.getString().isEmpty())
 				.toList();
 
 		if (meaningful.size() == 1) {
-			Text child = meaningful.getFirst();
-			Text found = findLeaf(child);
+			Component child = meaningful.getFirst();
+			Component found = findLeaf(child);
 			// Inherit color from parent if child has none
 			TextColor color = text.getStyle().getColor();
 			if (found != null && found.getStyle().getColor() == null && color != null) {
-				return Text.literal(found.getString()).setStyle(Style.EMPTY.withColor(color));
+				return Component.literal(found.getString()).setStyle(Style.EMPTY.withColor(color));
 			}
 			return found;
 		}
@@ -45,17 +50,17 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		return null;
 	}
 
-	private JsonElement simplifyText(Text text) {
+	private JsonElement simplifyText(Component text) {
 		if (text == null) return JsonNull.INSTANCE;
 
-		Text leaf = findLeaf(text);
+		Component leaf = findLeaf(text);
 		if (leaf != null) {
 			String content = leaf.getString();
 			TextColor color = leaf.getStyle().getColor();
 			if (content != null && !content.isEmpty()) {
 				if (color != null) {
 					JsonObject simplified = new JsonObject();
-					simplified.addProperty("color", color.getName());
+					simplified.addProperty("color", color.serialize());
 					simplified.addProperty("text", content);
 					return simplified;
 				} else {
@@ -69,7 +74,7 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		if (!content.isEmpty()) obj.addProperty("text", content);
 
 		TextColor color = text.getStyle().getColor();
-		if (color != null) obj.addProperty("color", color.getName());
+		if (color != null) obj.addProperty("color", color.serialize());
 
 		Style style = text.getStyle();
 		if (Boolean.TRUE.equals(style.isBold())) obj.addProperty("bold", true);
@@ -78,10 +83,10 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		if (Boolean.TRUE.equals(style.isStrikethrough())) obj.addProperty("strikethrough", true);
 		if (Boolean.TRUE.equals(style.isObfuscated())) obj.addProperty("obfuscated", true);
 
-		List<Text> siblings = text.getSiblings();
+		List<Component> siblings = text.getSiblings();
 		if (!siblings.isEmpty()) {
 			JsonArray extraArray = new JsonArray();
-			for (Text sibling : siblings)
+			for (Component sibling : siblings)
 				extraArray.add(simplifyText(sibling));
 			obj.add("extra", extraArray);
 		}
@@ -89,25 +94,25 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		return obj;
 	}
 
-	private Text reconstructText(JsonElement element) {
-		if (element == null || element.isJsonNull()) return Text.empty();
+	private Component reconstructText(JsonElement element) {
+		if (element == null || element.isJsonNull()) return Component.empty();
 
 		if (element.isJsonPrimitive())
-			return Text.literal(element.getAsString());
+			return Component.literal(element.getAsString());
 
 		JsonObject obj = element.getAsJsonObject();
-		MutableText text;
+		MutableComponent text;
 
 		if (obj.has("text"))
-			text = Text.literal(obj.get("text").getAsString());
+			text = Component.literal(obj.get("text").getAsString());
 		else
-			text = Text.empty();
+			text = Component.empty();
 
 		Style style = Style.EMPTY
 				.withColor(parseColor(obj))
 				.withBold(obj.has("bold") && obj.get("bold").getAsBoolean() ? true : null)
 				.withItalic(obj.has("italic") && obj.get("italic").getAsBoolean() ? true : null)
-				.withUnderline(obj.has("underlined") && obj.get("underlined").getAsBoolean() ? true : null)
+				.withUnderlined(obj.has("underlined") && obj.get("underlined").getAsBoolean() ? true : null)
 				.withStrikethrough(obj.has("strikethrough") && obj.get("strikethrough").getAsBoolean() ? true : null)
 				.withObfuscated(obj.has("obfuscated") && obj.get("obfuscated").getAsBoolean() ? true : null);
 
@@ -130,7 +135,7 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		if (colorElement.isJsonPrimitive()) {
 			String colorStr = colorElement.getAsString();
 			try {
-				return TextColor.parse(colorStr).result().orElse(null);
+				return TextColor.parseColor(colorStr).result().orElse(null);
 			} catch (Exception ignored) {}
 		}
 		return null;
@@ -141,7 +146,7 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		if (stack == null || stack.isEmpty()) return JsonNull.INSTANCE;
 
 		JsonObject obj = new JsonObject();
-		Identifier id = Registries.ITEM.getId(stack.getItem());
+		Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
 		obj.addProperty("item", id.toString());
 
 		// Serialize custom name
@@ -152,9 +157,9 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		}
 
 		// Serialize profile component with its codec
-		ProfileComponent comp = stack.get(DataComponentTypes.PROFILE);
-		if (id.equals(Identifier.of("minecraft:player_head")) && comp != null) {
-			ProfileComponent.CODEC.encodeStart(JsonOps.INSTANCE, comp)
+		ResolvableProfile comp = stack.get(DataComponents.PROFILE);
+		if (id.equals(Identifier.parse("minecraft:player_head")) && comp != null) {
+			ResolvableProfile.CODEC.encodeStart(JsonOps.INSTANCE, comp)
 					.resultOrPartial(error -> {
 						MMHelper.LOGGER.error("Failed to serialize ProfileComponent: {}", error);
 					})
@@ -172,25 +177,25 @@ public class ItemStackGSONAdapter implements JsonSerializer<ItemStack>, JsonDese
 		JsonObject obj = json.getAsJsonObject();
 
 		String itemId = obj.get("item").getAsString();
-		Item item = Registries.ITEM.get(Identifier.of(itemId));
+		Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(itemId));
 		ItemStack stack = new ItemStack(item);
 
 		// Deserialize custom name with TextCodecs
 		if (obj.has("name") && !obj.get("name").isJsonNull()) {
-			Text text = reconstructText(obj.get("name"));
+			Component text = reconstructText(obj.get("name"));
 			if (text != null && !text.getString().isEmpty()) {
-				stack.set(DataComponentTypes.CUSTOM_NAME, text);
+				stack.set(DataComponents.CUSTOM_NAME, text);
 			}
 		}
 
 		// Deserialize profile component with its codec
 		if (obj.has("profile") && !obj.get("profile").isJsonNull()) {
-			ProfileComponent.CODEC.parse(JsonOps.INSTANCE, obj.get("profile"))
+			ResolvableProfile.CODEC.parse(JsonOps.INSTANCE, obj.get("profile"))
 					.resultOrPartial(error -> {
 						MMHelper.LOGGER.error("Failed to deserialize ProfileComponent: {}", error);
 					})
 					.ifPresent(profileComp -> {
-						stack.set(DataComponentTypes.PROFILE, profileComp);
+						stack.set(DataComponents.PROFILE, profileComp);
 					});
 		}
 

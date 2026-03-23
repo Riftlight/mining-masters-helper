@@ -2,10 +2,10 @@ package com.riftlight.mmhelper;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.LoreComponent;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
 
 import java.io.*;
 import java.util.HashMap;
@@ -56,14 +56,14 @@ public class MuseumStorage {
 	// todo make it auto record items put in museum, changes ^
 	public static void add(ItemStack element) {
 		MuseumState type = entryType(element);
-		String name = element.getName().getString();
+		String name = element.getHoverName().getString();
 		museum.put(name, type);
 	}
 
 	// Should only be checking for in-game inv items
 	public static boolean contains(ItemStack element) {
 		MuseumState elementType = itemType(element);
-		String name = element.getName().getString();
+		String name = element.getHoverName().getString();
 
 		if (!museum.containsKey(name))
 			return false;
@@ -78,10 +78,10 @@ public class MuseumStorage {
 	}
 
 	private static MuseumState entryType(ItemStack stack) {
-		LoreComponent lore = stack.get(DataComponentTypes.LORE);
+		ItemLore lore = stack.get(DataComponents.LORE);
 		if (lore == null) return MuseumState.SUBMITTED; // never should happen
 
-		Text line = lore.lines().getLast();
+		Component line = lore.lines().getLast();
 		if (line.getString().equals("☑ Enhanced!"))
 			return MuseumState.ENHANCED;
 		if (line.getString().equals("Ω Ascended!"))
@@ -90,7 +90,7 @@ public class MuseumStorage {
 	}
 
 	private static MuseumState itemType(ItemStack stack) {
-		LoreComponent lore = stack.get(DataComponentTypes.LORE);
+		ItemLore lore = stack.get(DataComponents.LORE);
 		if (lore == null) return MuseumState.SUBMITTED; // never should happen
 
 		String line = lore.lines().getLast().getString();

@@ -6,14 +6,14 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.fabricmc.fabric.api.client.screen.v1.ScreenEvents;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 
 import java.io.FileReader;
 import java.io.Reader;
@@ -54,29 +54,29 @@ public class TaskHudOverlay implements ModInitializer {
 	// TODO it would probably be nicer to transfer all initialization logic to MMHelper
 	@Override
 	public void onInitialize() {
-		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.of(MMHelper.MOD_ID, "before_chat"), TaskHudOverlay::renderList);
+		HudElementRegistry.attachElementBefore(VanillaHudElements.CHAT, Identifier.fromNamespaceAndPath(MMHelper.MOD_ID, "before_chat"), TaskHudOverlay::renderList);
 
 		ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) -> {
-			if (screen instanceof HandledScreen<?> handledScreen)
+			if (screen instanceof AbstractContainerScreen<?> handledScreen)
 				ScreenEvents.afterRender(screen).register((screen1, drawContext, mouseX, mouseY, tickDelta) -> {
 					renderGrid(drawContext, handledScreen);
 				});
 		});
 	}
 
-	private static void renderList(DrawContext context, RenderTickCounter tickCounter) {
-		MinecraftClient client = MinecraftClient.getInstance();
+	private static void renderList(GuiGraphics context, DeltaTracker tickCounter) {
+		Minecraft client = Minecraft.getInstance();
 
 		if (client == null || targetItem == null) return;
-		int x = client.getWindow().getScaledWidth();
+		int x = client.getWindow().getGuiScaledWidth();
 
-		context.drawText(client.textRenderer, targetItem.getName(), x - client.textRenderer.getWidth(targetItem.getName()) - 5, 10, 0xFF00FF00, true);
+		context.drawString(client.font, targetItem.getHoverName(), x - client.font.width(targetItem.getHoverName()) - 5, 10, 0xFF00FF00, true);
 
-		Recipe recipe = RecipeStorage.getRecipe(targetItem.getName().getString());
+		Recipe recipe = RecipeStorage.getRecipe(targetItem.getHoverName().getString());
 		if (recipe == null)
 			return;
 
-		if (client.currentScreen != null && client.currentScreen.getTitle().getString().equals("Crafting Menu")) return;
+		if (client.screen != null && client.screen.getTitle().getString().equals("Crafting Menu")) return;
 
 		int currY = 23;
 		for (IngredientEntry ingredient : ingredients) {
@@ -94,37 +94,37 @@ public class TaskHudOverlay implements ModInitializer {
 			// Color is green if missing, gray if already made
 			int color = owned ? 0xFF777777 : 0xFF00FF00;
 
-			Text text = Text.literal(ingredient.name + " x" + ingredient.amount);
-			if (owned) text = text.copy().styled(s -> s.withStrikethrough(true));
-			context.drawText(client.textRenderer, text, x - client.textRenderer.getWidth(text) - 5, currY, color, true);
+			Component text = Component.literal(ingredient.name + " x" + ingredient.amount);
+			if (owned) text = text.copy().withStyle(s -> s.withStrikethrough(true));
+			context.drawString(client.font, text, x - client.font.width(text) - 5, currY, color, true);
 			currY += 10;
 
 			if (ingredient.description == null || ingredient.playerHas) continue;
 			// Draw description smaller
 			float scale = 0.6f;
-			context.getMatrices().pushMatrix();
-			context.getMatrices().scale(scale, scale);
-			int descX = (int) ((x / scale - client.textRenderer.getWidth(ingredient.description) - 5));
+			context.pose().pushMatrix();
+			context.pose().scale(scale, scale);
+			int descX = (int) ((x / scale - client.font.width(ingredient.description) - 5));
 			int descY = (int) (currY / scale);
 
-			context.drawText(client.textRenderer, ingredient.description, descX, descY, 0xFFAAAAAA, true);
+			context.drawString(client.font, ingredient.description, descX, descY, 0xFFAAAAAA, true);
 
-			context.getMatrices().popMatrix();
+			context.pose().popMatrix();
 			currY += (int) (10 * scale);
 		}
 
 	}
 
-	private static void renderGrid(DrawContext context, HandledScreen<?> screen) {
-		MinecraftClient client = MinecraftClient.getInstance();
+	private static void renderGrid(GuiGraphics context, AbstractContainerScreen<?> screen) {
+		Minecraft client = Minecraft.getInstance();
 
 		if (client == null || targetItem == null) return;
 
-		Recipe recipe = RecipeStorage.getRecipe(targetItem.getName().getString());
+		Recipe recipe = RecipeStorage.getRecipe(targetItem.getHoverName().getString());
 		if (recipe == null) return;
-		int x = client.getWindow().getScaledWidth();
+		int x = client.getWindow().getGuiScaledWidth();
 
-		if (client.currentScreen != null && client.currentScreen.getTitle().getString().equals("Crafting Menu")) {
+		if (client.screen != null && client.screen.getTitle().getString().equals("Crafting Menu")) {
 			int xStart = x - 20;
 			for (int row = 0; row < 3; row++) {
 				for (int col = 0; col < 3; col++) {
@@ -132,16 +132,16 @@ public class TaskHudOverlay implements ModInitializer {
 					int slotX = xStart - col * 18;
 					int slotY = 23 + row * 18;
 
-					context.drawGuiTexture(
+					context.blitSprite(
 							RenderPipelines.GUI_TEXTURED,
-							Identifier.ofVanilla("container/slot"),
+							Identifier.withDefaultNamespace("container/slot"),
 							slotX - 1,
 							slotY - 1,
 							18, // 18 because each slot is 16x16px and 2px dividers between each
 							18
 					);
 					if (item == null) continue;
-					context.drawItem(item, slotX, slotY);
+					context.renderItem(item, slotX, slotY);
 				}
 			}
 		}
@@ -151,12 +151,12 @@ public class TaskHudOverlay implements ModInitializer {
 		targetItem = newItem;
 		ingredients.clear();
 
-		String rawName = newItem.getName().getString();
+		String rawName = newItem.getHoverName().getString();
 		System.out.println("rawName: " + rawName);
 		Recipe recipe = RecipeStorage.getRecipe(rawName);
 
 		if (recipe == null) {
-			MinecraftClient.getInstance().player.sendMessage(Text.literal("Could not retrieve a recipe for that item!"), false);
+			Minecraft.getInstance().player.displayClientMessage(Component.literal("Could not retrieve a recipe for that item!"), false);
 			return;
 		}
 
@@ -169,10 +169,10 @@ public class TaskHudOverlay implements ModInitializer {
 	}
 
 	private static boolean playerHasItem(String ingredientName, int requiredAmount) {
-		MinecraftClient client = MinecraftClient.getInstance();
+		Minecraft client = Minecraft.getInstance();
 		int total = 0;
-		for (ItemStack stack : client.player.getInventory().getMainStacks()) {
-			if (stack.getName().getString().equalsIgnoreCase(ingredientName)) {
+		for (ItemStack stack : client.player.getInventory().getNonEquipmentItems()) {
+			if (stack.getHoverName().getString().equalsIgnoreCase(ingredientName)) {
 				total += stack.getCount();
 				if (total >= requiredAmount) return true;
 			}

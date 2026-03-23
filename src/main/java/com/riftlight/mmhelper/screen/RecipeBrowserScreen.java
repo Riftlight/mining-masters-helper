@@ -4,16 +4,16 @@ import com.riftlight.mmhelper.Ingredient;
 import com.riftlight.mmhelper.Recipe;
 import com.riftlight.mmhelper.RecipeStorage;
 import com.riftlight.mmhelper.TaskHudOverlay;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -32,7 +32,7 @@ public class RecipeBrowserScreen extends Screen {
 	private int maxScrollOffset = 0;
 
 	public RecipeBrowserScreen() {
-		super(Text.literal("Recipe Browser"));
+		super(Component.literal("Recipe Browser"));
 
 	}
 
@@ -42,24 +42,24 @@ public class RecipeBrowserScreen extends Screen {
 
 		// Search box
 		int searchWidth = 200;
-		TextFieldWidget searchBox = new TextFieldWidget(
-				textRenderer,
+		EditBox searchBox = new EditBox(
+				font,
 				(width - searchWidth) / 2,
 				GRID_PADDING,
 				searchWidth,
 				20,
-				Text.literal("Search recipes...")
+				Component.literal("Search recipes...")
 		);
-		searchBox.setChangedListener(this::onSearchChanged);
-		this.addDrawableChild(searchBox);
+		searchBox.setResponder(this::onSearchChanged);
+		this.addRenderableWidget(searchBox);
 
 		// Close button
-		this.addDrawableChild(
-				ButtonWidget.builder(
-						Text.literal("Close"),
-						button -> this.close()
+		this.addRenderableWidget(
+				Button.builder(
+						Component.literal("Close"),
+						button -> this.onClose()
 				)
-				.dimensions(width - 60, 5, 50, 20)
+				.bounds(width - 60, 5, 50, 20)
 				.build()
 		);
 
@@ -93,11 +93,11 @@ public class RecipeBrowserScreen extends Screen {
 	}
 
 	@Override
-	public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+	public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
 		super.render(context, mouseX, mouseY, delta);
 
 		// title
-		context.drawCenteredTextWithShadow(textRenderer, "Saved Recipes", width / 2, 40, 0xFFFFFF);
+		context.drawCenteredString(font, "Saved Recipes", width / 2, 40, 0xFFFFFF);
 
 		// scroll indicator if necessary
 		if (maxScrollOffset > 0)
@@ -141,7 +141,7 @@ public class RecipeBrowserScreen extends Screen {
 		}
 	}
 
-	private void renderRecipeCard(DrawContext context, Map.Entry<String, Recipe> entry, int x, int y, int mouseX, int mouseY) {
+	private void renderRecipeCard(GuiGraphics context, Map.Entry<String, Recipe> entry, int x, int y, int mouseX, int mouseY) {
 		String itemName = entry.getKey();
 		Recipe recipe = entry.getValue();
 
@@ -173,15 +173,15 @@ public class RecipeBrowserScreen extends Screen {
 					int slotX = gridStartX + col * cellSize;
 					int slotY = gridStartY + row * cellSize;
 
-					context.drawItem(stack, slotX, slotY);
-					context.drawStackOverlay(textRenderer, stack, slotX, slotY);
+					context.renderItem(stack, slotX, slotY);
+					context.renderItemDecorations(font, stack, slotX, slotY);
 				}
 			}
 		}
 	}
 
-	private void renderCardTitle(DrawContext context, String text, int cardX, int cardY, int cardWidth, float scale) {
-		context.getMatrices().pushMatrix();
+	private void renderCardTitle(GuiGraphics context, String text, int cardX, int cardY, int cardWidth, float scale) {
+		context.pose().pushMatrix();
 
 		int maxLineWidth = (int) (cardWidth * 0.9f / scale);
 
@@ -192,7 +192,7 @@ public class RecipeBrowserScreen extends Screen {
 		// build lines that fit within max width
 		for (String word : words) {
 			String testLine = currentLine.isEmpty() ? word : currentLine + " " + word;
-			int testWidth = textRenderer.getWidth(testLine);
+			int testWidth = font.width(testLine);
 
 			if (testWidth <= maxLineWidth) {
 				currentLine = new StringBuilder(testLine);
@@ -202,7 +202,7 @@ public class RecipeBrowserScreen extends Screen {
 					currentLine = new StringBuilder(word);
 				} else {
 					// word itself is too long, truncate
-					lines.add(truncateText(word, maxLineWidth, textRenderer));
+					lines.add(truncateText(word, maxLineWidth, font));
 				}
 			}
 		}
@@ -213,66 +213,66 @@ public class RecipeBrowserScreen extends Screen {
 		if (lines.size() > 2) {
 			String lastLine = lines.get(1) + "...";
 			// if adding ... makes it too long, truncate further
-			while (textRenderer.getWidth(lastLine) > maxLineWidth && lastLine.length() > 3) {
+			while (font.width(lastLine) > maxLineWidth && lastLine.length() > 3) {
 				lastLine = lastLine.substring(0, lastLine.length() - 4) + "...";
 			}
 			lines = lines.subList(0, 2);
 			lines.set(1, lastLine);
 		}
 
-		int lineHeight = textRenderer.fontHeight;
+		int lineHeight = font.lineHeight;
 
 		// Draw each line centered
 		for (int i = 0; i < lines.size(); i++) {
 			String line = lines.get(i);
-			int lineWidth = textRenderer.getWidth(line);
+			int lineWidth = font.width(line);
 
-			context.getMatrices().pushMatrix();
+			context.pose().pushMatrix();
 			// Move to center of card, then to vertical position for this line
-			context.getMatrices().translate(
+			context.pose().translate(
 					cardX + cardWidth / 2f,
 					cardY + i * lineHeight * scale + (lineHeight * scale) / 2f
 			);
-			context.getMatrices().scale(scale, scale);
+			context.pose().scale(scale, scale);
 
 			// Draw centered at (0,0)
-			context.drawText(textRenderer, Text.literal(line), -lineWidth / 2, 0, 0xFFFFFFFF, true);
+			context.drawString(font, Component.literal(line), -lineWidth / 2, 0, 0xFFFFFFFF, true);
 
-			context.getMatrices().popMatrix();
+			context.pose().popMatrix();
 		}
 
-		context.getMatrices().popMatrix();
+		context.pose().popMatrix();
 	}
 
-	private String truncateText(String text, int maxWidth, TextRenderer textRenderer) {
-		if (textRenderer.getWidth(text) <= maxWidth) {
+	private String truncateText(String text, int maxWidth, Font textRenderer) {
+		if (textRenderer.width(text) <= maxWidth) {
 			return text;
 		}
 
 		String truncated = text;
-		while (textRenderer.getWidth(truncated + "...") > maxWidth && truncated.length() > 1) {
+		while (textRenderer.width(truncated + "...") > maxWidth && truncated.length() > 1) {
 			truncated = truncated.substring(0, truncated.length() - 1);
 		}
 		return truncated + "...";
 	}
 
-	private void renderTooltip(DrawContext context, Map.Entry<String, Recipe> entry, int mouseX, int mouseY) {
-		List<Text> tooltip = new ArrayList<>();
-		tooltip.add(Text.literal(entry.getKey()).formatted(Formatting.GOLD, Formatting.BOLD));
-		tooltip.add(Text.literal("Ingredients:").formatted(Formatting.GRAY));
+	private void renderTooltip(GuiGraphics context, Map.Entry<String, Recipe> entry, int mouseX, int mouseY) {
+		List<Component> tooltip = new ArrayList<>();
+		tooltip.add(Component.literal(entry.getKey()).withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+		tooltip.add(Component.literal("Ingredients:").withStyle(ChatFormatting.GRAY));
 
 		for (Ingredient ing : entry.getValue().getIngredients()) {
-			tooltip.add(Text.literal("  • " +
+			tooltip.add(Component.literal("  • " +
 					ing.getName() +
 					(ing.getAmount() > 1 ? " x" + ing.getAmount() : ""))
-				.formatted(Formatting.WHITE)
+				.withStyle(ChatFormatting.WHITE)
 			);
 		}
 
-		context.drawTooltip(textRenderer, tooltip, mouseX, mouseY);
+		context.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
 	}
 
-	private void renderScrollBar(DrawContext context) {
+	private void renderScrollBar(GuiGraphics context) {
 		int barX = width-8;
 		int barY = 70;
 		int barHeight = height - 80;
@@ -287,7 +287,7 @@ public class RecipeBrowserScreen extends Screen {
 	}
 
 	@Override
-	public boolean mouseClicked(Click click, boolean doubled) {
+	public boolean mouseClicked(MouseButtonEvent click, boolean doubled) {
 		// Pin clicked recipe
 		int startX = GRID_PADDING;
 		int startY = 70;
@@ -303,7 +303,7 @@ public class RecipeBrowserScreen extends Screen {
 					String clickedKey = filteredRecipes.get(i).getKey();
 					ItemStack t = RecipeStorage.getRecipe(clickedKey).getResult();
 					TaskHudOverlay.setItem(t);
-					this.close();
+					this.onClose();
 					return true;
 				}
 			}
@@ -321,9 +321,9 @@ public class RecipeBrowserScreen extends Screen {
 	}
 
 	@Override
-	public boolean keyPressed(KeyInput input) {
-		if (input.getKeycode() == GLFW.GLFW_KEY_ESCAPE) {
-			this.close();
+	public boolean keyPressed(KeyEvent input) {
+		if (input.input() == GLFW.GLFW_KEY_ESCAPE) {
+			this.onClose();
 			return true;
 		}
 		return super.keyPressed(input);

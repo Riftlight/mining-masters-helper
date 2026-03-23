@@ -11,8 +11,8 @@
     "requireAnnotations": true
   },
   "client": [
-    "ClientPlayNetworkHandlerMixin",
-    "HandledScreenAccessor",
-    "HandledScreenMixin"
+    "ClientPacketListenerMixin",
+    "AbstractContainerScreenAccessor",
+    "AbstractContainerScreenMixin"
   ]
 }
